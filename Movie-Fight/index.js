@@ -56,79 +56,176 @@ Spread GIVE value from a function call => from an array into each agrs
 
 */
 
-const fetchData = async searchTerm => {
+// Create a autocomplete search
+
+const autoCompleteConfig = {
+  renderOption: movie => {
+    const imgSrc = movie.Poster === 'N/A' ? '' : movie.Poster;
+    return `
+    <img src="${imgSrc}"/>
+    <span>${movie.Title} (${movie.Year})</span>
+    `;
+  },
+
+  inputValue(movie) {
+    return movie.Title;
+  },
+
+  fetchData: async searchTerm => {
+    const response = await axios.get('http://www.omdbapi.com/', {
+      params: {
+        apikey: 'd9835cc5',
+        s: searchTerm
+      }
+    });
+    if (response.data.Error) {
+      return [];
+    }
+    // console.log(response.data);
+    return response.data.Search;
+  }
+};
+
+createAutoComplete({
+  root: document.querySelector('#left-autocomplete'),
+  onOptionSelect(movie) {
+    document.querySelector('.tutorial').classList.add('is-hidden');
+    onMovieSelect(movie, document.querySelector('#left-summary'), 'left');
+  },
+  ...autoCompleteConfig
+});
+
+createAutoComplete({
+  root: document.querySelector('#right-autocomplete'),
+  onOptionSelect(movie) {
+    document.querySelector('.tutorial').classList.add('is-hidden');
+    onMovieSelect(movie, document.querySelector('#right-summary'), 'right');
+  },
+  ...autoCompleteConfig
+});
+
+// Fetch each single movie info
+let leftMovie;
+let rightMovie;
+const onMovieSelect = async (movie, summaryElement, side) => {
   const response = await axios.get('http://www.omdbapi.com/', {
     params: {
       apikey: 'd9835cc5',
-      s: searchTerm
+      i: movie.imdbID
     }
   });
-
-  if (response.data.Error) {
-    return [];
-  }
-
   // console.log(response.data);
-  return response.data.Search;
-};
+  summaryElement.innerHTML = movieTemplate(response.data);
 
-const root = document.querySelector('.autocomplete');
-root.innerHTML = `
-  <label><b>Search For a Movie</b></label>
-  <input class="input" />
-  <div class="dropdown">
-     <div class="dropdown-menu">
-     <div class="dropdown-content results"></div>
-    </div>
-  </div>
-`;
-
-const input = document.querySelector('input');
-const dropdown = document.querySelector('.dropdown');
-const resultWrapper = document.querySelector('.results');
-
-const onInput = async event => {
-  const movies = await fetchData(event.target.value);
-  // console.log(movies);
-
-  // remove empty dropdown when no moive data
-  // === 0 same as below
-  if (!movies.length) {
-    dropdown.classList.remove('is-active');
-    return;
+  if (side === 'left') {
+    leftMovie = response.data;
+  } else {
+    rightMovie = response.data;
   }
-  // reset moive inside every search
-  resultWrapper.innerHTML = '';
 
-  dropdown.classList.add('is-active');
-  for (let movie of movies) {
-    const option = document.createElement('a');
-    // check if img not found => dont display img
-    const imgSrc = movie.Poster === 'N/A' ? '' : movie.Poster;
-
-    option.classList.add('dropdown-item');
-    option.innerHTML = `
-    <img src="${imgSrc}"/>
-    <span>${movie.Title}</span>
-    `;
-
-    option.addEventListener('click', () => {
-      dropdown.classList.remove('is-active');
-      console.log(movies);
-
-      // using the closure scope of this function. Means everything outside of that arrow function
-      // we still have a reffernce to the movie variable
-      input.value = movie.Title;
+  if (leftMovie && rightMovie) {
+    // hí ha một lần nữa lại tìm ra sai sót của steve grider một đỉnh kout software engineer, mình cũng đỉnh đấy chứ ^_^!
+    // Reset compare color when search for new movie to compare
+    const resetLeftSide = document.querySelectorAll(
+      '#left-summary .notification'
+    );
+    resetLeftSide.forEach(item => {
+      item.classList.remove('is-warning');
+      item.classList.add('is-primary');
     });
-    resultWrapper.appendChild(option);
+    const resetRightSide = document.querySelectorAll(
+      '#right-summary .notification'
+    );
+    resetRightSide.forEach(item => {
+      item.classList.remove('is-warning');
+      item.classList.add('is-primary');
+    });
+
+    runComparison();
   }
 };
 
-input.addEventListener('input', debounce(onInput, 1000));
+const runComparison = () => {
+  const leftSideStats = document.querySelectorAll(
+    '#left-summary .notification'
+  );
+  const rightSideStats = document.querySelectorAll(
+    '#right-summary .notification'
+  );
 
-// check if user click outside of searchbar, it will dissapear
-document.addEventListener('click', event => {
-  if (!root.contains(event.target)) {
-    dropdown.classList.remove('is-active');
-  }
-});
+  leftSideStats.forEach((leftStats, index) => {
+    const rightStats = rightSideStats[index];
+    // Sướng vl không ngờ ngay cả steven grider còn bị sai sót chỗ này mà mình tìm ra được cũng thông minh đấy chứ
+    // Nhưng mà app này còn 1 lỗi nữa là khi search nhiều movie khác nhau màu sắc compare nó vẫn k reset
+    const leftSideValue = parseInt(leftStats.dataset.value);
+    const rightSideValue = parseInt(rightStats.dataset.value);
+
+    if (leftSideValue > rightSideValue) {
+      rightStats.classList.remove('is-primary');
+      rightStats.classList.add('is-warning');
+    } else {
+      leftStats.classList.remove('is-primary');
+      leftStats.classList.add('is-warning');
+    }
+  });
+};
+
+// Display movie to the DOM
+const movieTemplate = movieDetails => {
+  const dollars = parseInt(
+    movieDetails.BoxOffice.replace(/\$/g, '').replace(/,/g, '')
+  );
+  const metaScore = parseInt(movieDetails.Metascore);
+  const imdbRating = parseFloat(movieDetails.imdbRating);
+  const imdbVotes = parseInt(movieDetails.imdbVotes.replace(/,/g, ''));
+  const awards = movieDetails.Awards.split(' ').reduce((prev, word) => {
+    const value = parseInt(word);
+    if (isNaN(value)) {
+      return prev;
+    } else {
+      return prev + value;
+    }
+  }, 0);
+
+  return `
+  <article class="media">
+    <figure class="media-left">
+      <p class="image">
+        <img src="${movieDetails.Poster}" >
+      </p>
+    </figure>
+    <div class="media-content">
+      <div class="content">
+        <h1>${movieDetails.Title}</h1>
+        <h4>${movieDetails.Genre}</h4>
+        <p>${movieDetails.Plot}</p>
+      </div>
+    </div>
+  </article>
+
+  <article data-value=${awards} class="notification is-primary">
+    <p class="title">${movieDetails.Awards}</p>
+    <p class="subtitle">Award</p>
+  </article>
+
+  <article data-value=${dollars} class="notification is-primary">
+    <p class="title">${movieDetails.BoxOffice}</p>
+    <p class="subtitle">BoxOffice</p>
+  </article>
+
+  <article data-value=${metaScore} class="notification is-primary">
+    <p class="title">${movieDetails.Metascore}</p>
+    <p class="subtitle">Metascore</p>
+  </article>
+
+  <article data-value=${imdbRating} class="notification is-primary">
+    <p class="title">${movieDetails.imdbRating}</p>
+    <p class="subtitle">IMDB Rating</p>
+  </article>
+
+  <article data-value=${imdbVotes} class="notification is-primary">
+    <p class="title">${movieDetails.imdbVotes}</p>
+    <p class="subtitle">IMDB Votes</p>
+  </article>
+    `;
+};
